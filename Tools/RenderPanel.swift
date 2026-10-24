@@ -4,6 +4,10 @@ import AppKit
 @main
 struct RenderPanel {
     static func main() async {
+        if CommandLine.arguments.contains("--probe") {
+            await runProbe()
+            return
+        }
         let quota = try? await ZCodeQuotaService.fetchQuota()
         let deepseek = await DeepSeekService.fetch()
         let snapshot = Snapshot(
@@ -34,4 +38,39 @@ struct RenderPanel {
             }
         }
     }
+
+    @MainActor
+    private static func runProbe() async {
+        let store = UsageStore()
+
+        var deadline = Date().addingTimeInterval(10)
+        while (store.updatedAt == nil || store.isRefreshing) && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        guard let first = store.updatedAt else {
+            print("refresh on activation: no (no initial load)")
+            exit(1)
+        }
+
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+
+        var second: Date?
+        deadline = Date().addingTimeInterval(10)
+        while second == nil && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            if let updated = store.updatedAt, updated > first { second = updated }
+        }
+
+        let firstText = clock.string(from: first)
+        let secondText = second.map { clock.string(from: $0) } ?? "none"
+        let refreshed = second != nil
+        print("refresh on activation: \(refreshed ? "yes" : "no") (\(firstText) -> \(secondText))")
+        exit(refreshed ? 0 : 1)
+    }
+
+    private static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter
+    }()
 }

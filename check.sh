@@ -20,4 +20,5 @@ swiftc -swift-version 5 -parse-as-library -target arm64-apple-macos13.0 \
 	Tools/RenderPanel.swift \
 	-o build/RenderPanel
 
+./build/RenderPanel --probe
 ./build/RenderPanel build/panel.png

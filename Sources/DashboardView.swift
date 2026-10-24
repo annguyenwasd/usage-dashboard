@@ -6,8 +6,10 @@ final class UsageStore: ObservableObject {
     @Published private(set) var zcode: Loadable<ZCodeQuota> = .idle
     @Published private(set) var deepseek: Loadable<DeepSeekUsage> = .idle
     @Published private(set) var updatedAt: Date?
+    @Published private(set) var isRefreshing = false
 
     private var timer: Timer?
+    private var observerTokens: [NSObjectProtocol] = []
 
     init(snapshot: Snapshot? = nil) {
         if let snapshot {
@@ -16,6 +18,17 @@ final class UsageStore: ObservableObject {
             updatedAt = snapshot.updatedAt
             return
         }
+        let center = NotificationCenter.default
+        observerTokens = [
+            center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in await self?.refresh() }
+            },
+            center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { [weak self] notification in
+                guard let window = notification.object as? NSWindow,
+                      String(describing: type(of: window)) != "NSStatusBarWindow" else { return }
+                Task { @MainActor in await self?.refresh() }
+            }
+        ]
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.refresh() }
         }
@@ -24,7 +37,16 @@ final class UsageStore: ObservableObject {
         Task { await refresh() }
     }
 
+    deinit {
+        for token in observerTokens {
+            NotificationCenter.default.removeObserver(token)
+        }
+    }
+
     func refresh() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
         if case .idle = zcode { zcode = .loading }
         if case .idle = deepseek { deepseek = .loading }
 
@@ -198,9 +220,18 @@ struct DashboardView: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            Text("Updated \(store.updatedAt.map { Self.clock.string(from: $0) } ?? "—")")
+            if store.isRefreshing {
+                HStack(spacing: 4) {
+                    ProgressView().controlSize(.mini)
+                    Text("Updating…")
+                }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            } else {
+                Text("Updated \(store.updatedAt.map { Self.clock.string(from: $0) } ?? "—")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Spacer()
             Button("Refresh") {
                 Task { await store.refresh() }
