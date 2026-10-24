@@ -4,6 +4,7 @@ import AppKit
 @MainActor
 final class UsageStore: ObservableObject {
     @Published private(set) var zcode: Loadable<ZCodeQuota> = .idle
+    @Published private(set) var startPlan: Loadable<StartPlanQuota> = .idle
     @Published private(set) var deepseek: Loadable<DeepSeekUsage> = .idle
     @Published private(set) var updatedAt: Date?
     @Published private(set) var isRefreshing = false
@@ -14,6 +15,7 @@ final class UsageStore: ObservableObject {
     init(snapshot: Snapshot? = nil) {
         if let snapshot {
             zcode = snapshot.zcode
+            startPlan = snapshot.startPlan
             deepseek = snapshot.deepseek
             updatedAt = snapshot.updatedAt
             return
@@ -48,28 +50,36 @@ final class UsageStore: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
         if case .idle = zcode { zcode = .loading }
+        if case .idle = startPlan { startPlan = .loading }
         if case .idle = deepseek { deepseek = .loading }
 
         async let quota = loadQuota()
+        async let plan = loadStartPlan()
         async let usage = DeepSeekService.fetch()
-        let snapshot = Snapshot(zcode: await quota, deepseek: await usage, updatedAt: Date())
+        let snapshot = Snapshot(zcode: await quota, startPlan: await plan, deepseek: await usage, updatedAt: Date())
 
         zcode = snapshot.zcode
+        startPlan = snapshot.startPlan
         deepseek = snapshot.deepseek
         updatedAt = snapshot.updatedAt
     }
 
     var menuBarLabel: String {
         if case .loaded(let quota) = zcode {
-            let warning = quota.fiveHour.remainingFraction < 0.10
+            var warning = quota.fiveHour.remainingFraction < 0.10
                 || quota.week.remainingFraction < 0.10
                 || quota.fiveHour.remaining <= 0
                 || quota.week.remaining <= 0
-            var label = "\(warning ? "⚠ " : "")5h \(percent(quota.fiveHour))% · wk \(percent(quota.week))%"
+            var label = "5h \(percent(quota.fiveHour.remainingFraction))% · wk \(percent(quota.week.remainingFraction))%"
+            if case .loaded(let plan) = startPlan {
+                let remaining = plan.windows.map(\.remainingFraction).min() ?? 1
+                warning = warning || remaining < 0.10 || plan.windows.contains { $0.remaining <= 0 }
+                label += " · start \(percent(remaining))%"
+            }
             if case .loaded(let usage) = deepseek {
                 label += " · $\(money(usage.balanceUSD))"
             }
-            return label
+            return "\(warning ? "⚠ " : "")\(label)"
         }
         if case .failed = zcode {
             if case .loaded(let usage) = deepseek {
@@ -88,8 +98,16 @@ final class UsageStore: ObservableObject {
         }
     }
 
-    private func percent(_ window: QuotaWindow) -> Int {
-        Int((window.remainingFraction * 100).rounded())
+    private func loadStartPlan() async -> Loadable<StartPlanQuota> {
+        do {
+            return .loaded(try await StartPlanService.fetchBalance())
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    private func percent(_ fraction: Double) -> Int {
+        Int((fraction * 100).rounded())
     }
 
     private func money(_ value: Double) -> String {
@@ -110,6 +128,8 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 14) {
             header
             quotaSection
+            Divider()
+            startPlanSection
             Divider()
             deepSeekSection
             Divider()
@@ -151,6 +171,37 @@ struct DashboardView: View {
         }
     }
 
+    private var startPlanSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Text("Start Plan").font(.headline)
+                if case .loaded(let plan) = store.startPlan {
+                    Text(plan.planName)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.15), in: Capsule())
+                }
+                Spacer()
+            }
+            switch store.startPlan {
+            case .loaded(let plan):
+                ForEach(plan.windows) { window in
+                    quotaRow(window)
+                }
+            case .failed(let message):
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red.opacity(0.8))
+            case .loading, .idle:
+                Text("Loading…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private func quotaRow(_ window: QuotaWindow) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -169,7 +220,7 @@ struct DashboardView: View {
                 }
             }
             .frame(height: 6)
-            Text("\(count(window.remaining)) left · \(resetText(window.resetsAt))")
+            Text("\(count(window.remaining)) left · \(resetText(window.resetsAt, expires: window.expires))")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -249,17 +300,18 @@ struct DashboardView: View {
         return .accentColor
     }
 
-    private func resetText(_ date: Date?) -> String {
-        guard let date else { return "no reset time" }
+    private func resetText(_ date: Date?, expires: Bool = false) -> String {
+        guard let date else { return expires ? "no expiry" : "no reset time" }
         let seconds = date.timeIntervalSinceNow
-        if seconds <= 0 { return "resets now" }
+        if seconds <= 0 { return expires ? "expired" : "resets now" }
         let minutes = max(Int(seconds / 60), 1)
         let days = minutes / 1440
         let hours = (minutes % 1440) / 60
         let mins = minutes % 60
-        if days > 0 { return "resets in \(days)d \(hours)h" }
-        if hours > 0 { return "resets in \(hours)h \(mins)m" }
-        return "resets in \(mins)m"
+        let verb = expires ? "expires" : "resets"
+        if days > 0 { return "\(verb) in \(days)d \(hours)h" }
+        if hours > 0 { return "\(verb) in \(hours)h \(mins)m" }
+        return "\(verb) in \(mins)m"
     }
 
     private static let countFormatter: NumberFormatter = {

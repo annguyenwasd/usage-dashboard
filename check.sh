@@ -6,6 +6,8 @@ mkdir -p build
 swiftc -swift-version 5 -parse-as-library -target arm64-apple-macos13.0 \
 	Sources/UsageModel.swift \
 	Sources/ZCodeQuotaService.swift \
+	Sources/ZCodeCredentials.swift \
+	Sources/StartPlanService.swift \
 	Sources/DeepSeekService.swift \
 	Tools/SelfTest.swift \
 	-o build/SelfTest
@@ -15,6 +17,8 @@ swiftc -swift-version 5 -parse-as-library -target arm64-apple-macos13.0 \
 swiftc -swift-version 5 -parse-as-library -target arm64-apple-macos13.0 \
 	Sources/UsageModel.swift \
 	Sources/ZCodeQuotaService.swift \
+	Sources/ZCodeCredentials.swift \
+	Sources/StartPlanService.swift \
 	Sources/DeepSeekService.swift \
 	Sources/DashboardView.swift \
 	Tools/RenderPanel.swift \

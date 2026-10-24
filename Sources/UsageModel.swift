@@ -7,6 +7,17 @@ struct QuotaWindow: Sendable, Identifiable {
     let total: Double
     let remaining: Double
     let resetsAt: Date?
+    let expires: Bool
+
+    init(id: String, label: String, used: Double, total: Double, remaining: Double, resetsAt: Date?, expires: Bool = false) {
+        self.id = id
+        self.label = label
+        self.used = used
+        self.total = total
+        self.remaining = remaining
+        self.resetsAt = resetsAt
+        self.expires = expires
+    }
 
     var usedFraction: Double {
         guard total > 0 else { return 0 }
@@ -23,6 +34,16 @@ struct ZCodeQuota: Sendable {
     let level: String
     let fiveHour: QuotaWindow
     let week: QuotaWindow
+}
+
+struct StartPlanQuota: Sendable {
+    let planName: String
+    let windows: [QuotaWindow]
+}
+
+struct QuotaError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }
 
 struct DeepSeekUsage: Sendable {
@@ -44,6 +65,7 @@ enum Loadable<T: Sendable>: Sendable {
 
 struct Snapshot: Sendable {
     let zcode: Loadable<ZCodeQuota>
+    let startPlan: Loadable<StartPlanQuota>
     let deepseek: Loadable<DeepSeekUsage>
     let updatedAt: Date?
 }

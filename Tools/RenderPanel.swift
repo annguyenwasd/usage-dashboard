@@ -9,9 +9,11 @@ struct RenderPanel {
             return
         }
         let quota = try? await ZCodeQuotaService.fetchQuota()
+        let startPlan = try? await StartPlanService.fetchBalance()
         let deepseek = await DeepSeekService.fetch()
         let snapshot = Snapshot(
             zcode: quota.map { .loaded($0) } ?? .failed("quota unavailable"),
+            startPlan: startPlan.map { .loaded($0) } ?? .failed("start plan unavailable"),
             deepseek: deepseek,
             updatedAt: Date()
         )

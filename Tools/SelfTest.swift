@@ -38,7 +38,18 @@ struct SelfTest {
             deepseek = ["error": "not loaded"]
         }
 
-        let output: [String: Any] = ["zcode": zcode, "deepseek": deepseek]
+        var startPlan: [String: Any]
+        do {
+            let plan = try await StartPlanService.fetchBalance()
+            startPlan = [
+                "planName": plan.planName,
+                "balances": plan.windows.map(windowJSON)
+            ]
+        } catch {
+            startPlan = ["error": error.localizedDescription]
+        }
+
+        let output: [String: Any] = ["zcode": zcode, "startPlan": startPlan, "deepseek": deepseek]
         guard let data = try? JSONSerialization.data(withJSONObject: output, options: [.prettyPrinted, .sortedKeys]) else {
             FileHandle.standardError.write(Data("Could not encode results\n".utf8))
             exit(1)
@@ -48,12 +59,13 @@ struct SelfTest {
 
     private static func windowJSON(_ window: QuotaWindow) -> [String: Any] {
         var object: [String: Any] = [
+            "label": window.label,
             "used": window.used,
             "total": window.total,
             "remaining": window.remaining
         ]
         if let resetsAt = window.resetsAt {
-            object["resetsAt"] = ISO8601DateFormatter().string(from: resetsAt)
+            object[window.expires ? "expiresAt" : "resetsAt"] = ISO8601DateFormatter().string(from: resetsAt)
         }
         return object
     }
