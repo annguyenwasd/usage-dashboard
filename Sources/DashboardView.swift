@@ -72,9 +72,12 @@ final class UsageStore: ObservableObject {
             var warning = binding.remainingFraction < 0.10
             var label = "\(binding.id == "week" ? "wk" : "5h") \(percent(binding.remainingFraction))%"
             if case .loaded(let plan) = startPlan {
-                let remaining = plan.windows.map(\.remainingFraction).min() ?? 1
-                warning = warning || remaining < 0.10
-                label += " · start \(percent(remaining))%"
+                for pool in plan.windows {
+                    // strip the GLM- prefix so the bar lists each model without overflowing
+                    let name = pool.label.hasPrefix("GLM-") ? String(pool.label.dropFirst(4)) : pool.label
+                    label += " · \(name) \(percent(pool.remainingFraction))%"
+                    warning = warning || pool.remainingFraction < 0.10
+                }
             }
             if case .loaded(let usage) = deepseek {
                 label += " · $\(money(usage.balanceUSD))"

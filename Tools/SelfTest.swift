@@ -61,12 +61,18 @@ struct SelfTest {
 
     // the bar must headline the binding window: with the week exhausted, "5h 100%" is unusable quota
     private static func assertMenuBarLabel() async throws {
-        func label(weekRemaining: Double, fiveHourRemaining: Double) async -> String {
+        func label(weekRemaining: Double, fiveHourRemaining: Double, startPools: Bool = false) async -> String {
             let week = QuotaWindow(id: "week", label: "Weekly window", used: 60000 - weekRemaining, total: 60000, remaining: weekRemaining, resetsAt: nil)
             let fiveHour = QuotaWindow(id: "5h", label: "5-hour window", used: 12000 - fiveHourRemaining, total: 12000, remaining: fiveHourRemaining, resetsAt: nil)
+            let pools: Loadable<StartPlanQuota> = startPools
+                ? .loaded(StartPlanQuota(planName: "P", windows: [
+                    QuotaWindow(id: "a", label: "GLM-5.3-Flash", used: 10, total: 100, remaining: 90, resetsAt: nil, expires: true),
+                    QuotaWindow(id: "b", label: "GLM-4.7-Air", used: 0, total: 100, remaining: 100, resetsAt: nil, expires: true)
+                ]))
+                : .idle
             let snapshot = Snapshot(
                 zcode: .loaded(ZCodeQuota(level: "pro", fiveHour: fiveHour, week: week)),
-                startPlan: .idle,
+                startPlan: pools,
                 deepseek: .idle,
                 updatedAt: nil
             )
@@ -82,7 +88,11 @@ struct SelfTest {
         guard healthy == "5h 50%" else {
             throw QuotaError(message: "healthy plan must headline the 5h window, got '\(healthy)'")
         }
-        print("menuBarLabel ok: '\(exhausted)' / '\(healthy)'")
+        let perModel = await label(weekRemaining: 30000, fiveHourRemaining: 6000, startPools: true)
+        guard perModel == "5h 50% · 5.3-Flash 90% · 4.7-Air 100%" else {
+            throw QuotaError(message: "start plan pools must list per-model percents by name, got '\(perModel)'")
+        }
+        print("menuBarLabel ok: '\(exhausted)' / '\(healthy)' / '\(perModel)'")
     }
 
     private static func assertModelUsageParsing() throws {
