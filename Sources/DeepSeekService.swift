@@ -79,12 +79,16 @@ enum DeepSeekService {
     }
 
     private static func apiKey() throws -> String {
-        let path = "/Users/annguyenvanchuc/workspace/secrets/.dsh"
+        if let key = ProcessInfo.processInfo.environment["DEEPSEEK_API_KEY"], !key.isEmpty {
+            return key
+        }
+        let path = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".deepseek_key").path
         let raw: String
         do {
             raw = try String(contentsOfFile: path, encoding: .utf8)
         } catch {
-            throw DeepSeekError(message: "Cannot read DeepSeek key at \(path)")
+            throw DeepSeekError(message: "Cannot read DeepSeek key: set DEEPSEEK_API_KEY or create \(path)")
         }
         let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
