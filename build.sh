@@ -11,6 +11,7 @@ swiftc -O -swift-version 5 -parse-as-library -target arm64-apple-macos13.0 \
 	Sources/ZCodeCredentials.swift \
 	Sources/StartPlanService.swift \
 	Sources/DeepSeekService.swift \
+	Sources/JevService.swift \
 	Sources/DashboardView.swift \
 	Sources/AppMain.swift \
 	-o UsageDashboard.app/Contents/MacOS/UsageDashboard

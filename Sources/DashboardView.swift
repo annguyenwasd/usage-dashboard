@@ -6,17 +6,20 @@ final class UsageStore: ObservableObject {
     @Published private(set) var zcode: Loadable<ZCodeQuota> = .idle
     @Published private(set) var startPlan: Loadable<StartPlanQuota> = .idle
     @Published private(set) var deepseek: Loadable<DeepSeekUsage> = .idle
+    @Published private(set) var jev: Loadable<Double> = .idle
     @Published private(set) var updatedAt: Date?
     @Published private(set) var isRefreshing = false
 
     private var timer: Timer?
     private var observerTokens: [NSObjectProtocol] = []
+    private var jevFetchedAt: Date?
 
     init(snapshot: Snapshot? = nil) {
         if let snapshot {
             zcode = snapshot.zcode
             startPlan = snapshot.startPlan
             deepseek = snapshot.deepseek
+            jev = snapshot.jev
             updatedAt = snapshot.updatedAt
             return
         }
@@ -45,7 +48,7 @@ final class UsageStore: ObservableObject {
         }
     }
 
-    func refresh() async {
+    func refresh(forceJev: Bool = false) async {
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
@@ -56,7 +59,12 @@ final class UsageStore: ObservableObject {
         async let quota = loadQuota()
         async let plan = loadStartPlan()
         async let usage = DeepSeekService.fetch()
-        let snapshot = Snapshot(zcode: await quota, startPlan: await plan, deepseek: await usage, updatedAt: Date())
+        // shortcut: each Jev balance probe is a billed decide call, so it is polled at most every 30 min
+        if forceJev || jevFetchedAt.map({ Date().timeIntervalSince($0) >= 1800 }) ?? true {
+            jev = await loadJev()
+            jevFetchedAt = Date()
+        }
+        let snapshot = Snapshot(zcode: await quota, startPlan: await plan, deepseek: await usage, jev: jev, updatedAt: Date())
 
         zcode = snapshot.zcode
         startPlan = snapshot.startPlan
@@ -65,32 +73,48 @@ final class UsageStore: ObservableObject {
     }
 
     var menuBarLabel: String {
+        var dollars: [String] = []
+        if case .loaded(let usage) = deepseek {
+            dollars.append("DS $\(money(usage.balanceUSD))")
+        }
+        if case .loaded(let balance) = jev {
+            dollars.append("Jev $\(money(balance))")
+        }
         if case .loaded(let quota) = zcode {
-            // nested windows: the lower remaining fraction is the one blocking usage, so it is the headline
+            // nested windows: the lower remaining fraction is the one blocking usage, so it leads
             let binding = [quota.fiveHour, quota.week]
                 .min(by: { $0.remainingFraction < $1.remainingFraction })!
+            let other = binding.id == quota.fiveHour.id ? quota.week : quota.fiveHour
             var warning = binding.remainingFraction < 0.10
-            var label = "\(binding.id == "week" ? "wk" : "5h") \(percent(binding.remainingFraction))%"
+            var label = "P \(tag(binding)) \(percent(binding.remainingFraction))%"
+            label += " · \(tag(other)) \(percent(other.remainingFraction))%"
             if case .loaded(let plan) = startPlan {
-                for pool in plan.windows {
+                let pools = plan.windows.map { pool -> String in
                     // strip the GLM- prefix so the bar lists each model without overflowing
                     let name = pool.label.hasPrefix("GLM-") ? String(pool.label.dropFirst(4)) : pool.label
-                    label += " · \(name) \(percent(pool.remainingFraction))%"
-                    warning = warning || pool.remainingFraction < 0.10
+                    return "\(name) \(percent(pool.remainingFraction))%"
                 }
+                if !pools.isEmpty {
+                    label += " │ S " + pools.joined(separator: " · ")
+                }
+                warning = warning || plan.windows.contains { $0.remainingFraction < 0.10 }
             }
-            if case .loaded(let usage) = deepseek {
-                label += " · $\(money(usage.balanceUSD))"
+            if !dollars.isEmpty {
+                label += " │ " + dollars.joined(separator: " · ")
             }
             return "\(warning ? "⚠ " : "")\(label)"
         }
         if case .failed = zcode {
-            if case .loaded(let usage) = deepseek {
-                return "! · $\(money(usage.balanceUSD))"
+            if !dollars.isEmpty {
+                return "! · " + dollars.joined(separator: " · ")
             }
             if case .failed = deepseek { return "!" }
         }
         return "…"
+    }
+
+    private func tag(_ window: QuotaWindow) -> String {
+        window.id == "week" ? "wk" : "5h"
     }
 
     private func loadQuota() async -> Loadable<ZCodeQuota> {
@@ -104,6 +128,14 @@ final class UsageStore: ObservableObject {
     private func loadStartPlan() async -> Loadable<StartPlanQuota> {
         do {
             return .loaded(try await StartPlanService.fetchBalance())
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    private func loadJev() async -> Loadable<Double> {
+        do {
+            return .loaded(try await JevService.fetchBalance())
         } catch {
             return .failed(error.localizedDescription)
         }
@@ -134,7 +166,7 @@ struct DashboardView: View {
             Divider()
             startPlanSection
             Divider()
-            deepSeekSection
+            balancesSection
             Divider()
             footer
         }
@@ -144,7 +176,7 @@ struct DashboardView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("Z.ai Coding Plan").font(.headline)
+            Text("Pro Plan").font(.headline)
             if case .loaded(let quota) = store.zcode {
                 Text(quota.level.uppercased())
                     .font(.caption2.weight(.semibold))
@@ -241,14 +273,18 @@ struct DashboardView: View {
         }
     }
 
-    private var deepSeekSection: some View {
+    private var balancesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("DeepSeek API").font(.headline)
-            switch store.deepseek {
-            case .loaded(let usage):
-                Text("$\(String(format: "%.2f", usage.balanceUSD))")
-                    .font(.system(size: 30, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
+            HStack(alignment: .top, spacing: 0) {
+                balanceBlock("DeepSeek API", value: store.deepseek, amount: { String(format: "%.2f", $0.balanceUSD) }, caption: nil)
+                    .padding(.trailing, 22)
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.3))
+                    .frame(width: 1)
+                balanceBlock("Jev API", value: store.jev, amount: { String(format: "%.2f", $0) }, caption: "prepaid · output tokens free")
+                    .padding(.leading, 22)
+            }
+            if case .loaded(let usage) = store.deepseek {
                 if usage.localUsageError != nil {
                     Text("local usage unavailable")
                         .font(.caption)
@@ -258,6 +294,18 @@ struct DashboardView: View {
                     usageRow("Last 5h", tokens: usage.last5hTokens)
                     usageRow("7 days", tokens: usage.weekTokens, requests: usage.weekRequests)
                 }
+            }
+        }
+    }
+
+    private func balanceBlock<T>(_ name: String, value: Loadable<T>, amount: (T) -> String, caption: String?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(name)
+            switch value {
+            case .loaded(let value):
+                Text(amount(value))
+                    .font(.system(size: 30, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
             case .failed(let message):
                 Text(message)
                     .font(.caption)
@@ -267,7 +315,13 @@ struct DashboardView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            if let caption {
+                Text(caption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func usageRow(_ label: String, tokens: Int, requests: Int? = nil) -> some View {
@@ -300,7 +354,7 @@ struct DashboardView: View {
             }
             Spacer()
             Button("Refresh") {
-                Task { await store.refresh() }
+                Task { await store.refresh(forceJev: true) }
             }
             Button("Quit") {
                 NSApplication.shared.terminate(nil)

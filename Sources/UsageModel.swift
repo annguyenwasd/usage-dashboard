@@ -83,5 +83,6 @@ struct Snapshot: Sendable {
     let zcode: Loadable<ZCodeQuota>
     let startPlan: Loadable<StartPlanQuota>
     let deepseek: Loadable<DeepSeekUsage>
+    let jev: Loadable<Double>
     let updatedAt: Date?
 }

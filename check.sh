@@ -9,6 +9,7 @@ swiftc -swift-version 5 -parse-as-library -target arm64-apple-macos13.0 \
 	Sources/ZCodeCredentials.swift \
 	Sources/StartPlanService.swift \
 	Sources/DeepSeekService.swift \
+	Sources/JevService.swift \
 	Sources/DashboardView.swift \
 	Tools/SelfTest.swift \
 	-o build/SelfTest
@@ -21,6 +22,7 @@ swiftc -swift-version 5 -parse-as-library -target arm64-apple-macos13.0 \
 	Sources/ZCodeCredentials.swift \
 	Sources/StartPlanService.swift \
 	Sources/DeepSeekService.swift \
+	Sources/JevService.swift \
 	Sources/DashboardView.swift \
 	Tools/RenderPanel.swift \
 	-o build/RenderPanel

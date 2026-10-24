@@ -1,15 +1,16 @@
 # Usage Dashboard
 
-A macOS menu bar app that shows your ZCode (Z.ai) coding plan quota, your ZCode Start Plan balance, and your DeepSeek balance. The menu bar label shows remaining percentages at a glance. Click it to open a panel with the details.
+A macOS menu bar app that shows your ZCode Pro plan quota, your ZCode Start Plan balance, your DeepSeek balance, and your Jev balance. The menu bar label shows remaining percentages at a glance, tagged by plan. Click it to open a panel with the details.
 
 ![Panel showing Z.ai quota, Start Plan balance, and DeepSeek balance](Resources/screenshot.png)
 
 ## What it shows
 
-- **Z.ai Coding Plan.** Plan level, 5-hour window, and weekly window with used and total requests, plus reset times. Under each window, a per-model breakdown of the tokens it consumed (for example `GLM-5.3-Flash 1.3B · 76%`), aligned to the window's own time range. The split is token share only; the quota itself is plan-wide, so there is no per-model remaining.
+- **Pro Plan.** Plan level, 5-hour window, and weekly window with used and total requests, plus reset times. Under each window, a per-model breakdown of the tokens it consumed (for example `GLM-5.3-Flash 1.3B · 76%`), aligned to the window's own time range. The split is token share only; the quota itself is plan-wide, so there is no per-model remaining.
 - **Start Plan.** Plan name and one row per model pool (for example GLM-5.3-Flash and GLM-5.3) with used and total tokens and the expiry time, for one-time plans like the 1024 Dev Day.
 - **DeepSeek.** USD balance from the DeepSeek API, plus token and request counts for today, the last 5 hours, and the week, read from the local ZCode database.
-- The panel refreshes when you open it, when the app becomes active, and every 60 seconds. The menu bar label headlines the binding window, the one with the lowest remaining, then lists each Start Plan model pool by name with its own percent, then the DeepSeek dollars, as `5h 43% · 5.3-Flash 96% · 4.7-Air 100% · $1.65` (or `wk 0%` when the weekly window is the one blocking you). It gains a ⚠ when any window or pool drops under 10% remaining.
+- **Jev.** Remaining prepaid USD of your Jev (TypeSafe) key, read from `~/workspace/secrets/.jev`.
+- The panel refreshes when you open it, when the app becomes active, and every 60 seconds. The menu bar label tags each group so the two plans never blur together — `P` for the Pro plan's two windows (the binding one first), `S` for the Start Plan model pools, and named balances — as `P 5h 91% · wk 98% │ S 5.3-Flash 79% · 5.3 66% │ DS $1.17 · Jev $1.28`. It gains a ⚠ when any window or pool drops under 10% remaining.
 
 ## Requirements
 
@@ -35,7 +36,7 @@ To check that everything works on your machine, run:
 
 	open UsageDashboard.app
 
-A menu bar item appears with a label like `5h 43% · 5.3-Flash 96% · 4.7-Air 100% · $1.65`. Click it to open the panel. The app has no dock icon and no main window. It lives in the menu bar.
+A menu bar item appears with a label like `P 5h 91% · wk 98% │ S 5.3-Flash 79% · 5.3 66% │ DS $1.17 · Jev $1.28`. Click it to open the panel. The app has no dock icon and no main window. It lives in the menu bar.
 
 ## Wire it to your system
 
@@ -57,6 +58,10 @@ Put your DeepSeek API key in the `DEEPSEEK_API_KEY` environment variable, or in 
 	chmod 600 ~/.deepseek_key
 
 `Sources/DeepSeekService.swift` calls `https://api.deepseek.com/user/balance` with that key.
+
+### Jev balance
+
+`Sources/JevService.swift` reads the key from `~/workspace/secrets/.jev` and POSTs a minimal one-question request to `https://jevtypesafeai.com/api/v1/decide`; the response's `usage.credits_remaining_usd` is the remaining prepaid balance. Each probe is a billed decide call costing a fraction of a cent of input tokens, so the store polls it at most every 30 minutes — the panel's Refresh button always forces a fresh one. A `402` response is shown as an empty balance.
 
 ### Local token usage
 
@@ -93,4 +98,5 @@ Delete the provider's service file, its model struct, its `Snapshot` field, its 
 
 - The quota endpoints and the `enc:v1` credential format are undocumented. A ZCode update can break the quota rows or the Start Plan balance (the app version and client headers are pinned) until someone updates the services.
 - The local token counts are what ZCode recorded, not what DeepSeek reports.
+- The Jev balance costs a fraction of a cent per probe, so it can be up to 30 minutes stale between manual refreshes.
 - `build/panel.png`, which `check.sh` renders, contains your real usage numbers. Do not commit or share it. `Resources/screenshot.png` in this README also shows real numbers from when it was captured.

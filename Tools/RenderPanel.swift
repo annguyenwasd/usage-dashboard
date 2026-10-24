@@ -11,10 +11,12 @@ struct RenderPanel {
         let quota = try? await ZCodeQuotaService.fetchQuota()
         let startPlan = try? await StartPlanService.fetchBalance()
         let deepseek = await DeepSeekService.fetch()
+        let jev = try? await JevService.fetchBalance()
         let snapshot = Snapshot(
             zcode: quota.map { .loaded($0) } ?? .failed("quota unavailable"),
             startPlan: startPlan.map { .loaded($0) } ?? .failed("start plan unavailable"),
             deepseek: deepseek,
+            jev: jev.map { .loaded($0) } ?? .failed("jev unavailable"),
             updatedAt: Date()
         )
         let path = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "build/panel.png"

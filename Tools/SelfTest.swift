@@ -51,7 +51,14 @@ struct SelfTest {
             startPlan = ["error": error.localizedDescription]
         }
 
-        let output: [String: Any] = ["zcode": zcode, "startPlan": startPlan, "deepseek": deepseek]
+        var jev: [String: Any]
+        do {
+            jev = ["balanceUSD": try await JevService.fetchBalance()]
+        } catch {
+            jev = ["error": error.localizedDescription]
+        }
+
+        let output: [String: Any] = ["zcode": zcode, "startPlan": startPlan, "deepseek": deepseek, "jev": jev]
         guard let data = try? JSONSerialization.data(withJSONObject: output, options: [.prettyPrinted, .sortedKeys]) else {
             FileHandle.standardError.write(Data("Could not encode results\n".utf8))
             exit(1)
@@ -61,7 +68,7 @@ struct SelfTest {
 
     // the bar must headline the binding window: with the week exhausted, "5h 100%" is unusable quota
     private static func assertMenuBarLabel() async throws {
-        func label(weekRemaining: Double, fiveHourRemaining: Double, startPools: Bool = false) async -> String {
+        func label(weekRemaining: Double, fiveHourRemaining: Double, startPools: Bool = false, deepseek: Loadable<DeepSeekUsage> = .idle, jev: Loadable<Double> = .idle) async -> String {
             let week = QuotaWindow(id: "week", label: "Weekly window", used: 60000 - weekRemaining, total: 60000, remaining: weekRemaining, resetsAt: nil)
             let fiveHour = QuotaWindow(id: "5h", label: "5-hour window", used: 12000 - fiveHourRemaining, total: 12000, remaining: fiveHourRemaining, resetsAt: nil)
             let pools: Loadable<StartPlanQuota> = startPools
@@ -73,7 +80,8 @@ struct SelfTest {
             let snapshot = Snapshot(
                 zcode: .loaded(ZCodeQuota(level: "pro", fiveHour: fiveHour, week: week)),
                 startPlan: pools,
-                deepseek: .idle,
+                deepseek: deepseek,
+                jev: jev,
                 updatedAt: nil
             )
             return await MainActor.run {
@@ -81,18 +89,26 @@ struct SelfTest {
             }
         }
         let exhausted = await label(weekRemaining: 0, fiveHourRemaining: 12000)
-        guard exhausted == "⚠ wk 0%" else {
-            throw QuotaError(message: "exhausted week must headline '⚠ wk 0%', got '\(exhausted)'")
+        guard exhausted == "⚠ P wk 0% · 5h 100%" else {
+            throw QuotaError(message: "exhausted week must headline '⚠ P wk 0% · 5h 100%', got '\(exhausted)'")
         }
         let healthy = await label(weekRemaining: 30000, fiveHourRemaining: 6000)
-        guard healthy == "5h 50%" else {
-            throw QuotaError(message: "healthy plan must headline the 5h window, got '\(healthy)'")
+        guard healthy == "P 5h 50% · wk 50%" else {
+            throw QuotaError(message: "healthy plan must lead with the 5h window, got '\(healthy)'")
         }
         let perModel = await label(weekRemaining: 30000, fiveHourRemaining: 6000, startPools: true)
-        guard perModel == "5h 50% · 5.3-Flash 90% · 4.7-Air 100%" else {
-            throw QuotaError(message: "start plan pools must list per-model percents by name, got '\(perModel)'")
+        guard perModel == "P 5h 50% · wk 50% │ S 5.3-Flash 90% · 4.7-Air 100%" else {
+            throw QuotaError(message: "start plan pools must be tagged S and list per-model percents, got '\(perModel)'")
         }
-        print("menuBarLabel ok: '\(exhausted)' / '\(healthy)' / '\(perModel)'")
+        let balances = await label(
+            weekRemaining: 30000, fiveHourRemaining: 6000, startPools: true,
+            deepseek: .loaded(DeepSeekUsage(balanceUSD: 12.34, todayTokens: 0, last5hTokens: 0, weekTokens: 0, todayRequests: 0, weekRequests: 0, localUsageError: nil)),
+            jev: .loaded(1.28)
+        )
+        guard balances == "P 5h 50% · wk 50% │ S 5.3-Flash 90% · 4.7-Air 100% │ DS $12.34 · Jev $1.28" else {
+            throw QuotaError(message: "balances must be tagged DS and Jev, got '\(balances)'")
+        }
+        print("menuBarLabel ok: '\(exhausted)' / '\(healthy)' / '\(perModel)' / '\(balances)'")
     }
 
     private static func assertModelUsageParsing() throws {
