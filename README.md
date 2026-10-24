@@ -1,12 +1,15 @@
 # Usage Dashboard
 
-A macOS menu bar app that shows your ZCode (Z.ai) coding plan quota and your DeepSeek balance. The menu bar label shows remaining percentages at a glance. Click it to open a panel with the details.
+A macOS menu bar app that shows your ZCode (Z.ai) coding plan quota, your ZCode Start Plan balance, and your DeepSeek balance. The menu bar label shows remaining percentages at a glance. Click it to open a panel with the details.
+
+![Panel showing Z.ai quota, Start Plan balance, and DeepSeek balance](Resources/screenshot.png)
 
 ## What it shows
 
 - **Z.ai Coding Plan.** Plan level, 5-hour window, and weekly window with used and total requests, plus reset times.
+- **Start Plan.** Plan name and one row per model pool (for example GLM-5.3-Flash and GLM-5.3) with used and total tokens and the expiry time, for one-time plans like the 1024 Dev Day.
 - **DeepSeek.** USD balance from the DeepSeek API, plus token and request counts for today, the last 5 hours, and the week, read from the local ZCode database.
-- The panel refreshes when you open it, when the app becomes active, and every 60 seconds.
+- The panel refreshes when you open it, when the app becomes active, and every 60 seconds. The menu bar label shows `5h 100% · wk 42% · start 96% · $1.65` and gains a ⚠ when any window drops under 10% remaining.
 
 ## Requirements
 
@@ -41,6 +44,10 @@ A menu bar item appears with a label like `5h 100% · wk 42% · $1.65`. Click it
 `Sources/ZCodeQuotaService.swift` reads the access token from `~/.zcode/v2/credentials.json` (`oauth:zai:access_token`) and decrypts it with the scheme the ZCode CLI uses. That scheme takes the key from the `ZCODE_CREDENTIAL_SECRET` environment variable, or falls back to a key derived from your home path and username. The service then calls the undocumented endpoint `https://api.z.ai/api/monitor/usage/quota/limit`.
 
 If ZCode stored your token while `ZCODE_CREDENTIAL_SECRET` was set, the app picks that variable up at runtime. No configuration is needed for a default ZCode install.
+
+### Start Plan balance
+
+`Sources/StartPlanService.swift` reads the `zcodejwttoken` credential with the same decryption scheme and calls the undocumented endpoint `https://zcode.z.ai/api/v1/zcode-plan/billing/balance`. The endpoint rejects requests that do not carry ZCode's own client headers (user agent, app version, device id), so the service sends the same set the desktop app sends. The `app_version` query parameter is pinned to the installed ZCode version.
 
 ### DeepSeek balance
 
@@ -84,6 +91,6 @@ Delete the provider's service file, its model struct, its `Snapshot` field, its 
 
 ## Limits
 
-- The quota endpoint and the `enc:v1` credential format are undocumented. A ZCode update can break the quota row until someone updates the service.
+- The quota endpoints and the `enc:v1` credential format are undocumented. A ZCode update can break the quota rows or the Start Plan balance (the app version and client headers are pinned) until someone updates the services.
 - The local token counts are what ZCode recorded, not what DeepSeek reports.
-- `build/panel.png`, which `check.sh` renders, contains your real usage numbers. Do not commit or share it.
+- `build/panel.png`, which `check.sh` renders, contains your real usage numbers. Do not commit or share it. `Resources/screenshot.png` in this README also shows real numbers from when it was captured.
