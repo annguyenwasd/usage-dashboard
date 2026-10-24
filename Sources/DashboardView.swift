@@ -66,14 +66,14 @@ final class UsageStore: ObservableObject {
 
     var menuBarLabel: String {
         if case .loaded(let quota) = zcode {
-            var warning = quota.fiveHour.remainingFraction < 0.10
-                || quota.week.remainingFraction < 0.10
-                || quota.fiveHour.remaining <= 0
-                || quota.week.remaining <= 0
-            var label = "5h \(percent(quota.fiveHour.remainingFraction))% · wk \(percent(quota.week.remainingFraction))%"
+            // nested windows: the lower remaining fraction is the one blocking usage, so it is the headline
+            let binding = [quota.fiveHour, quota.week]
+                .min(by: { $0.remainingFraction < $1.remainingFraction })!
+            var warning = binding.remainingFraction < 0.10
+            var label = "\(binding.id == "week" ? "wk" : "5h") \(percent(binding.remainingFraction))%"
             if case .loaded(let plan) = startPlan {
                 let remaining = plan.windows.map(\.remainingFraction).min() ?? 1
-                warning = warning || remaining < 0.10 || plan.windows.contains { $0.remaining <= 0 }
+                warning = warning || remaining < 0.10
                 label += " · start \(percent(remaining))%"
             }
             if case .loaded(let usage) = deepseek {
@@ -136,7 +136,7 @@ struct DashboardView: View {
             footer
         }
         .padding(24)
-        .frame(width: 340)
+        .frame(width: 480)
     }
 
     private var header: some View {
@@ -210,6 +210,7 @@ struct DashboardView: View {
                 Text("\(count(window.used)) / \(count(window.total)) used")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
