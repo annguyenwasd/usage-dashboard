@@ -6,10 +6,10 @@ A macOS menu bar app that shows your ZCode (Z.ai) coding plan quota, your ZCode 
 
 ## What it shows
 
-- **Z.ai Coding Plan.** Plan level, 5-hour window, and weekly window with used and total requests, plus reset times.
+- **Z.ai Coding Plan.** Plan level, 5-hour window, and weekly window with used and total requests, plus reset times. Under each window, a per-model breakdown of the tokens it consumed (for example `GLM-5.3-Flash 1.3B · 76%`), aligned to the window's own time range. The split is token share only; the quota itself is plan-wide, so there is no per-model remaining.
 - **Start Plan.** Plan name and one row per model pool (for example GLM-5.3-Flash and GLM-5.3) with used and total tokens and the expiry time, for one-time plans like the 1024 Dev Day.
 - **DeepSeek.** USD balance from the DeepSeek API, plus token and request counts for today, the last 5 hours, and the week, read from the local ZCode database.
-- The panel refreshes when you open it, when the app becomes active, and every 60 seconds. The menu bar label shows `5h 100% · wk 42% · start 96% · $1.65` and gains a ⚠ when any window drops under 10% remaining.
+- The panel refreshes when you open it, when the app becomes active, and every 60 seconds. The menu bar label headlines the binding window, the one with the lowest remaining, as `5h 43% · start 96% · $1.65` (or `wk 0%` when the weekly window is the one blocking you), and gains a ⚠ when any window drops under 10% remaining.
 
 ## Requirements
 
@@ -35,13 +35,13 @@ To check that everything works on your machine, run:
 
 	open UsageDashboard.app
 
-A menu bar item appears with a label like `5h 100% · wk 42% · $1.65`. Click it to open the panel. The app has no dock icon and no main window. It lives in the menu bar.
+A menu bar item appears with a label like `5h 43% · start 96% · $1.65`. Click it to open the panel. The app has no dock icon and no main window. It lives in the menu bar.
 
 ## Wire it to your system
 
 ### Z.ai quota
 
-`Sources/ZCodeQuotaService.swift` reads the access token from `~/.zcode/v2/credentials.json` (`oauth:zai:access_token`) and decrypts it with the scheme the ZCode CLI uses. That scheme takes the key from the `ZCODE_CREDENTIAL_SECRET` environment variable, or falls back to a key derived from your home path and username. The service then calls the undocumented endpoint `https://api.z.ai/api/monitor/usage/quota/limit`.
+`Sources/ZCodeQuotaService.swift` reads the access token from `~/.zcode/v2/credentials.json` (`oauth:zai:access_token`) and decrypts it with the scheme the ZCode CLI uses. That scheme takes the key from the `ZCODE_CREDENTIAL_SECRET` environment variable, or falls back to a key derived from your home path and username. The service then calls the undocumented endpoints `https://api.z.ai/api/monitor/usage/quota/limit` for the windows and `https://api.z.ai/api/monitor/usage/model-usage` for the per-model token split, both found by reading the ZCode app bundle.
 
 If ZCode stored your token while `ZCODE_CREDENTIAL_SECRET` was set, the app picks that variable up at runtime. No configuration is needed for a default ZCode install.
 

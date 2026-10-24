@@ -1,5 +1,13 @@
 import Foundation
 
+struct ModelUsage: Sendable, Identifiable {
+    let name: String
+    let tokens: Int
+    let share: Double
+
+    var id: String { name }
+}
+
 struct QuotaWindow: Sendable, Identifiable {
     let id: String
     let label: String
@@ -8,8 +16,9 @@ struct QuotaWindow: Sendable, Identifiable {
     let remaining: Double
     let resetsAt: Date?
     let expires: Bool
+    var models: [ModelUsage] = []
 
-    init(id: String, label: String, used: Double, total: Double, remaining: Double, resetsAt: Date?, expires: Bool = false) {
+    init(id: String, label: String, used: Double, total: Double, remaining: Double, resetsAt: Date?, expires: Bool = false, models: [ModelUsage] = []) {
         self.id = id
         self.label = label
         self.used = used
@@ -17,6 +26,13 @@ struct QuotaWindow: Sendable, Identifiable {
         self.remaining = remaining
         self.resetsAt = resetsAt
         self.expires = expires
+        self.models = models
+    }
+
+    func withModels(_ models: [ModelUsage]) -> QuotaWindow {
+        var copy = self
+        copy.models = models
+        return copy
     }
 
     var usedFraction: Double {

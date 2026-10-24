@@ -4,6 +4,7 @@ import Foundation
 struct SelfTest {
     static func main() async throws {
         try await assertMenuBarLabel()
+        try assertModelUsageParsing()
         let quota: ZCodeQuota
         do {
             quota = try await ZCodeQuotaService.fetchQuota()
@@ -84,6 +85,15 @@ struct SelfTest {
         print("menuBarLabel ok: '\(exhausted)' / '\(healthy)'")
     }
 
+    private static func assertModelUsageParsing() throws {
+        let sample = #"{"code":200,"data":{"modelSummaryList":[{"modelName":"GLM-5.3","totalTokens":300,"sortOrder":1},{"modelName":"GLM-5.3-Flash","totalTokens":100,"sortOrder":2},{"modelName":"empty","totalTokens":0,"sortOrder":3}]}}"#
+        let models = try ZCodeQuotaService.parseModels(Data(sample.utf8))
+        guard models.map(\.name) == ["GLM-5.3", "GLM-5.3-Flash"], models[0].tokens == 300, abs(models[0].share - 0.75) < 0.001 else {
+            throw QuotaError(message: "model usage parse wrong: \(models)")
+        }
+        print("model usage parse ok: \(models.map { "\($0.name)=\($0.tokens)" })")
+    }
+
     private static func windowJSON(_ window: QuotaWindow) -> [String: Any] {
         var object: [String: Any] = [
             "label": window.label,
@@ -91,6 +101,9 @@ struct SelfTest {
             "total": window.total,
             "remaining": window.remaining
         ]
+        if !window.models.isEmpty {
+            object["models"] = window.models.map { ["name": $0.name, "tokens": $0.tokens, "share": $0.share] }
+        }
         if let resetsAt = window.resetsAt {
             object[window.expires ? "expiresAt" : "resetsAt"] = ISO8601DateFormatter().string(from: resetsAt)
         }

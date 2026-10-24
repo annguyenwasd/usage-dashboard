@@ -224,6 +224,17 @@ struct DashboardView: View {
             Text("\(count(window.remaining)) left · \(resetText(window.resetsAt, expires: window.expires))")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            ForEach(window.models) { model in
+                HStack {
+                    Text(model.name)
+                    Spacer()
+                    Text("\(compact(model.tokens)) · \(Int((model.share * 100).rounded()))%")
+                        .monospacedDigit()
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 8)
+            }
         }
     }
 
